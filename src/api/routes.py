@@ -2,6 +2,7 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 from flask import Flask, request, jsonify, url_for, Blueprint
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from api.models import db, User
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
@@ -20,3 +21,54 @@ def handle_hello():
     }
 
     return jsonify(response_body), 200
+
+@api.route('/signup', methods=['POST'])
+def handle_create_user():
+    body = request.get_json()
+
+    email = body.get('email')
+    password = body.get('password')
+
+    if not email or not password:
+        return jsonify({'msg': 'error'}, 400)
+    
+    if User.query.filter_by(email=email).first():
+        return jsonify({'msg': 'user exist'}), 400
+
+    new_user = User()
+    new_user.email = email
+    new_user.password = password
+    new_user.is_active = True
+
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({'msg': 'created', 'id': new_user.id}), 200
+
+@api.route('/login', methods=['POST'])
+def handle_login():
+    email = request.get_json()['email']
+    password = request.get_json()['password']
+
+    if email is None or password is None:
+        return jsonify({'msg': 'invalid data'}), 400
+    
+    user = User.query.filter_by(email=email, password=password).first()
+
+    if user is None:
+        return jsonify({'msg': 'user not exist'}), 404
+    
+    access_token = create_access_token(identity=user.email)
+
+    return jsonify({'id': user.id, 'access_token': access_token}), 200
+
+@api.route('/user', methods=['GET'])
+@jwt_required()
+def handle_get_user():
+    current_user_email = get_jwt_identity()
+
+    user = User.query.filter_by(email=current_user_email).first()
+    if user is None:
+        return jsonify({'msg': 'user not exist'}), 404
+
+    return jsonify({'email': user.email, 'is_active': user.is_active}), 200
